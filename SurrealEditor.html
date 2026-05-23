@@ -432,7 +432,7 @@ bgVideo.addEventListener('error', nextBg);
 // ON_SERVER: true when served over HTTP/HTTPS (local python server or Railway)
 const ON_SERVER = window.location.protocol === 'http:' || window.location.protocol === 'https:';
 
-let clips = [], musicFile = null, _lastCmd = '', _jobId = null, _evtSrc = null;
+let clips = [], musicFile = null, _lastCmd = '', _execCmd = '', _jobId = null, _evtSrc = null;
 
 const clipZone  = document.getElementById('clipDropZone');
 const clipInput = document.getElementById('clipFileInput');
@@ -537,6 +537,18 @@ function generate() {
   lines.push(`  "${outPath}" -y`);
   _lastCmd=lines.join('\n');
 
+  const ep=[ffmpeg];
+  clips.forEach(c=>ep.push(`-ss 0 -t ${clipDur} -i "${clipsDir}/${c.fullName}"`));
+  if(hasMusic) ep.push(`-i "${musicFile.name}"`);
+  ep.push(`-filter_complex "${filters.join(';')}"`);
+  ep.push(`-map "[${finalVTag}]"`);
+  if(hasMusic) ep.push(`-map "[aout]"`);
+  ep.push(`-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20`);
+  if(hasMusic) ep.push(`-c:a aac -b:a 192k`);
+  ep.push(`-movflags +faststart -shortest`);
+  ep.push(`"${outPath}" -y`);
+  _execCmd=ep.join(' ');
+
   const mins=Math.floor(totalDur/60), secs=Math.round(totalDur%60);
   document.getElementById('infoPills').innerHTML=[
     `<div class="pill"><span>${N}</span> clips</div>`,
@@ -583,7 +595,7 @@ function runCmd() {
   statusTag.textContent='Running'; statusTag.className='status-tag running';
   cancelBtn.style.display=''; logPanel.scrollIntoView({behavior:'smooth',block:'start'});
   if(_evtSrc){_evtSrc.close();_evtSrc=null;}
-  fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:_lastCmd})})
+  fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:_execCmd})})
   .then(r=>{if(!r.ok)throw new Error('Server error');return r.json();})
   .then(({job_id})=>{
     _jobId=job_id;
