@@ -26,6 +26,7 @@ jobs = {}  # job_id -> {process, lines, done, returncode}
 def analyze_clip(video_path, out_w, out_h):
     try:
         import cv2
+        import math
     except ImportError:
         return {'error': 'opencv not available'}
 
@@ -33,64 +34,70 @@ def analyze_clip(video_path, out_w, out_h):
     if not cap.isOpened():
         return {'error': 'cannot open video'}
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, total_frames // 4))
-    ret, frame = cap.read()
+    total_frames = max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+    frontal = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    profile = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_profileface.xml')
+
+    # Sample 3 frames; keep the one with the best face detection
+    best_frame, best_faces = None, []
+    for pos in [total_frames // 5, total_frames // 2, total_frames * 3 // 4]:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, pos)
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = frontal.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(20, 20))
+        if len(faces) == 0:
+            faces = profile.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(20, 20))
+        if len(faces) > len(best_faces):
+            best_faces, best_frame = list(faces), frame
+
     cap.release()
 
-    if not ret:
+    if best_frame is None:
         return {'error': 'cannot read frame'}
 
-    src_h, src_w = frame.shape[:2]
+    src_h, src_w = best_frame.shape[:2]
     scale = max(out_w / src_w, out_h / src_h)
-    # round to even pixel boundary (H.264/H.265 requirement)
-    scaled_w = round(src_w * scale / 2) * 2
-    scaled_h = round(src_h * scale / 2) * 2
+    # ceil to even boundary so we always over-scale (never under-fill the output)
+    scaled_w = math.ceil(src_w * scale / 2) * 2
+    scaled_h = math.ceil(src_h * scale / 2) * 2
 
+    # Default: centre crop
     crop_x = (scaled_w - out_w) // 2
     crop_y = (scaled_h - out_h) // 2
     face_found = False
 
-    try:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30))
+    if best_faces:
+        best_faces = sorted(best_faces, key=lambda f: f[2] * f[3], reverse=True)
+        fx, fy, fw, fh = best_faces[0]
 
-        if len(faces) > 0:
-            faces = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
-            fx, fy, fw, fh = faces[0]
+        face_cx_s  = (fx + fw / 2) * scale
+        face_cy_s  = (fy + fh / 2) * scale
+        face_top_s = fy * scale
+        face_left_s  = fx * scale
+        face_right_s = (fx + fw) * scale
 
-            face_top_s    = fy * scale
-            face_bottom_s = (fy + fh) * scale
-            face_left_s   = fx * scale
-            face_right_s  = (fx + fw) * scale
-            face_cx_s     = (fx + fw / 2) * scale
-            face_cy_s     = (fy + fh / 2) * scale
-            headroom      = fh * scale * 0.35
-            chin_room     = fh * scale * 0.1
+        # Generous headroom above Haar box: Haar starts at forehead, not hairline.
+        # 50 % of face height covers hair + safety margin.
+        head_top_s = max(0.0, face_top_s - fh * scale * 0.5)
 
-            # Horizontal: center on face, clamp to keep face in frame
-            cx = max(0, min(scaled_w - out_w, round(face_cx_s - out_w / 2)))
-            if face_left_s - cx < 0:
-                cx = max(0, round(face_left_s))
-            if face_right_s - cx > out_w:
-                cx = min(scaled_w - out_w, round(face_right_s - out_w))
+        # Horizontal: centre on face; clamp so face stays inside the crop
+        cx = round(face_cx_s - out_w / 2)
+        cx = max(0, min(scaled_w - out_w, cx))
+        if face_left_s < cx:
+            cx = max(0, math.floor(face_left_s))
+        if face_right_s > cx + out_w:
+            cx = min(scaled_w - out_w, math.ceil(face_right_s - out_w))
 
-            # Vertical: face center at 33% from top (head + upper body framing)
-            cy_ideal = round(face_cy_s - out_h * 0.33)
-            cy_min = round(face_bottom_s + chin_room - out_h)   # must show chin
-            cy_max = round(face_top_s - headroom)               # must show head
-            if cy_min > cy_max:
-                cy = cy_max  # face taller than frame — prioritise head
-            else:
-                cy = max(cy_min, min(cy_max, cy_ideal))
-            cy = max(0, min(scaled_h - out_h, cy))
+        # Vertical: face centre at 35 % from top → head + upper body in frame.
+        # Single hard rule: full head (hair included) must be above the crop top.
+        cy = round(face_cy_s - out_h * 0.35)
+        cy = min(cy, math.floor(head_top_s))   # never start below top-of-head
+        cy = max(0, min(scaled_h - out_h, cy))
 
-            crop_x = cx
-            crop_y = cy
-            face_found = True
-    except Exception:
-        pass
+        crop_x, crop_y = cx, cy
+        face_found = True
 
     return {
         'scaled_w': scaled_w,
