@@ -355,6 +355,13 @@ header p {
           <option value="webm_vp9">WebM — VP9 (web / browser)</option>
         </select>
       </div>
+      <div class="field">
+        <label>Smart Crop</label>
+        <select id="smartCrop">
+          <option value="off">Off — Centre crop</option>
+          <option value="on">On — Subject aware</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -534,7 +541,7 @@ function setMusic(f) {
   }
 }
 
-function generate() {
+async function generate() {
   if (clips.length < 2) { alert('Add at least 2 clips first.'); return; }
   if (_uploading > 0) { alert('Still uploading — please wait.'); return; }
   if (ON_SERVER && clips.some(c => !c.serverPath)) { alert('Some clips failed to upload. Remove them and re-add.'); return; }
@@ -546,9 +553,30 @@ function generate() {
   const flash=document.getElementById('flashMode').value;
   const grade=document.getElementById('colorGrade').value;
   const format=document.getElementById('outputFormat').value;
+  const smartCrop=document.getElementById('smartCrop').value;
   const clipsDir=document.getElementById('clipsDir').value.trim();
   const ffmpeg=document.getElementById('ffmpegPath').value.trim();
   const hasMusic=!!musicFile;
+
+  // Smart crop: analyse each clip server-side before building the command
+  let cropData = clips.map(() => null);
+  if (smartCrop === 'on' && ON_SERVER) {
+    const genBtn = document.querySelector('.gen-btn');
+    const origText = genBtn.textContent;
+    genBtn.disabled = true;
+    for (let i = 0; i < clips.length; i++) {
+      genBtn.textContent = `Analysing clip ${i + 1} / ${clips.length}…`;
+      const path = clips[i].serverPath;
+      if (!path) continue;
+      try {
+        const r = await fetch(`/analyze?path=${encodeURIComponent(path)}&w=${W}&h=${H}`);
+        const d = await r.json();
+        if (!d.error) cropData[i] = d;
+      } catch (_) {}
+    }
+    genBtn.disabled = false;
+    genBtn.textContent = origText;
+  }
 
   const FORMAT_MAP={
     mp4_h264:{ext:'mp4', vcodec:'-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20', acodec:'-c:a aac -b:a 192k', extra:'-movflags +faststart'},
@@ -583,7 +611,11 @@ function generate() {
   let filters=[];
   clips.forEach((_,i)=>{
     const g=glitch!=='none'?GLITCH_FX[glitch]:'';
-    filters.push(`[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,format=yuv420p${g}[v${i}]`);
+    const cd=cropData[i];
+    const scaleFilter=cd
+      ?`scale=${cd.scaled_w}:${cd.scaled_h},crop=${W}:${H}:${cd.crop_x}:${cd.crop_y}`
+      :`scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`;
+    filters.push(`[${i}:v]${scaleFilter},setsar=1,format=yuv420p${g}[v${i}]`);
   });
   let offset=0,prev='v0';
   for(let i=1;i<N;i++){
@@ -633,6 +665,7 @@ function generate() {
     `<div class="pill">Glitch: <span>${glitch}</span></div>`,
     grade!=='none'?`<div class="pill">Grade: <span>${grade.replace(/_/g,' ')}</span></div>`:'',
     `<div class="pill">Format: <span>${fmt.ext.toUpperCase()}</span></div>`,
+    smartCrop==='on'?`<div class="pill">Smart Crop: <span>${cropData.filter(Boolean).length}/${clips.length} faces</span></div>`:'',
     hasMusic?`<div class="pill">Music: <span>${musicFile.name}</span></div>`:''
   ].join('');
   const dlBtn2=document.getElementById('dlBtn');
