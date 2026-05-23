@@ -345,6 +345,16 @@ header p {
           <option value="neon_pop">Neon Pop</option>
         </select>
       </div>
+      <div class="field">
+        <label>Output Format</label>
+        <select id="outputFormat" onchange="updateOutputExt()">
+          <option value="mp4_h264">MP4 — H.264 (most compatible)</option>
+          <option value="mov_h264">MOV — H.264 (macOS / Pro)</option>
+          <option value="mkv_h264">MKV — H.264 (open container)</option>
+          <option value="mp4_h265">MP4 — H.265 / HEVC (smaller file)</option>
+          <option value="webm_vp9">WebM — VP9 (web / browser)</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -444,6 +454,13 @@ const ON_SERVER = window.location.protocol === 'http:' || window.location.protoc
 
 let clips = [], musicFile = null, _lastCmd = '', _execCmd = '', _jobId = null, _evtSrc = null, _uploading = 0;
 
+const FORMAT_EXT = { mp4_h264:'mp4', mov_h264:'mov', mkv_h264:'mkv', mp4_h265:'mp4', webm_vp9:'webm' };
+function updateOutputExt() {
+  const ext = FORMAT_EXT[document.getElementById('outputFormat').value] || 'mp4';
+  const el = document.getElementById('outputPath');
+  el.value = el.value.replace(/\.[^.]+$/, '') + '.' + ext;
+}
+
 const clipZone  = document.getElementById('clipDropZone');
 const clipInput = document.getElementById('clipFileInput');
 clipZone.addEventListener('dragover',  e => { e.preventDefault(); clipZone.classList.add('over'); });
@@ -528,10 +545,20 @@ function generate() {
   const glitch=document.getElementById('glitchMode').value;
   const flash=document.getElementById('flashMode').value;
   const grade=document.getElementById('colorGrade').value;
+  const format=document.getElementById('outputFormat').value;
   const clipsDir=document.getElementById('clipsDir').value.trim();
-  const outPath=ON_SERVER?'/tmp/surreal_out.mp4':document.getElementById('outputPath').value.trim();
   const ffmpeg=document.getElementById('ffmpegPath').value.trim();
   const hasMusic=!!musicFile;
+
+  const FORMAT_MAP={
+    mp4_h264:{ext:'mp4', vcodec:'-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20', acodec:'-c:a aac -b:a 192k', extra:'-movflags +faststart'},
+    mov_h264:{ext:'mov', vcodec:'-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20', acodec:'-c:a aac -b:a 192k', extra:''},
+    mkv_h264:{ext:'mkv', vcodec:'-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20', acodec:'-c:a aac -b:a 192k', extra:''},
+    mp4_h265:{ext:'mp4', vcodec:'-c:v libx265 -pix_fmt yuv420p -preset fast -crf 22 -tag:v hvc1',               acodec:'-c:a aac -b:a 192k', extra:'-movflags +faststart'},
+    webm_vp9:{ext:'webm',vcodec:'-c:v libvpx-vp9 -crf 30 -b:v 0 -pix_fmt yuv420p',                             acodec:'-c:a libopus -b:a 128k',extra:''},
+  };
+  const fmt=FORMAT_MAP[format]||FORMAT_MAP.mp4_h264;
+  const outPath=ON_SERVER?`/tmp/surreal_out.${fmt.ext}`:document.getElementById('outputPath').value.trim();
 
   const GLITCH_FX={none:'',chroma:',rgbashift=rh=10:bh=-10:rv=0:bv=0',noise:',noise=c0s=22:allf=t',pixel:',pixelize=width=14:height=14',combo:',rgbashift=rh=8:bh=-8,noise=c0s=15:allf=t'};
   const COLOR_GRADE_FX={
@@ -577,9 +604,10 @@ function generate() {
   lines.push(filters.join(';\n')+`"`);
   lines.push('  \\');
   lines.push(`  -map "[${finalVTag}]"${hasMusic?' -map "[aout]"':''} \\`);
-  lines.push(`  -c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20 \\`);
-  if(hasMusic) lines.push(`  -c:a aac -b:a 192k \\`);
-  lines.push(`  -movflags +faststart -shortest \\`);
+  lines.push(`  ${fmt.vcodec} \\`);
+  if(hasMusic) lines.push(`  ${fmt.acodec} \\`);
+  if(fmt.extra) lines.push(`  ${fmt.extra} \\`);
+  lines.push(`  -shortest \\`);
   lines.push(`  "${outPath}" -y`);
   _lastCmd=lines.join('\n');
 
@@ -589,9 +617,10 @@ function generate() {
   ep.push(`-filter_complex "${filters.join(';')}"`);
   ep.push(`-map "[${finalVTag}]"`);
   if(hasMusic) ep.push(`-map "[aout]"`);
-  ep.push(`-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20`);
-  if(hasMusic) ep.push(`-c:a aac -b:a 192k`);
-  ep.push(`-movflags +faststart -shortest`);
+  ep.push(fmt.vcodec);
+  if(hasMusic) ep.push(fmt.acodec);
+  if(fmt.extra) ep.push(fmt.extra);
+  ep.push(`-shortest`);
   ep.push(`"${outPath}" -y`);
   _execCmd=ep.join(' ');
 
@@ -603,8 +632,11 @@ function generate() {
     `<div class="pill">Transition: <span>${trans}</span></div>`,
     `<div class="pill">Glitch: <span>${glitch}</span></div>`,
     grade!=='none'?`<div class="pill">Grade: <span>${grade.replace(/_/g,' ')}</span></div>`:'',
+    `<div class="pill">Format: <span>${fmt.ext.toUpperCase()}</span></div>`,
     hasMusic?`<div class="pill">Music: <span>${musicFile.name}</span></div>`:''
   ].join('');
+  const dlBtn2=document.getElementById('dlBtn');
+  if(dlBtn2){dlBtn2.href=`/files/surreal_out.${fmt.ext}`;dlBtn2.download=`surreal_compilation.${fmt.ext}`;}
 
   document.getElementById('cmdBlock').textContent=_lastCmd;
   const box=document.getElementById('outputBox');
