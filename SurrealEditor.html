@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Surreal Editor</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  color: #f0ece4;
+  background: #0a0408;
+}
+
+#bgVideo {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 100%;
+  object-fit: cover; z-index: 0;
+  filter: blur(5px) brightness(0.28) saturate(1.5);
+  transform: scale(1.06);
+}
+.overlay {
+  position: fixed; inset: 0;
+  background: linear-gradient(155deg, rgba(8,3,1,0.75) 0%, rgba(4,1,10,0.82) 100%);
+  z-index: 1;
+}
+
+.page {
+  position: relative; z-index: 2;
+  max-width: 980px; margin: 0 auto;
+  padding: 44px 24px 100px;
+}
+
+header { text-align: center; margin-bottom: 48px; }
+header h1 {
+  font-size: 46px; font-weight: 100;
+  letter-spacing: 18px; text-transform: uppercase;
+  color: #fff;
+  text-shadow: 0 0 80px rgba(230,140,40,0.45), 0 0 200px rgba(180,80,20,0.2);
+}
+header p {
+  margin-top: 10px; font-size: 11px;
+  letter-spacing: 5px; text-transform: uppercase;
+  color: #6a5a40;
+}
+
+.step-badge {
+  display: inline-block;
+  font-size: 9px; letter-spacing: 4px; text-transform: uppercase;
+  color: #c89040; border: 1px solid rgba(200,140,60,0.3);
+  border-radius: 20px; padding: 3px 12px; margin-bottom: 14px;
+}
+
+.card {
+  background: rgba(12,7,3,0.65);
+  border: 1px solid rgba(200,140,60,0.12);
+  border-radius: 14px; padding: 26px 28px;
+  margin-bottom: 16px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: border-color 0.3s;
+}
+.card:hover { border-color: rgba(200,140,60,0.22); }
+.card-title {
+  font-size: 9px; letter-spacing: 4px;
+  text-transform: uppercase; color: #7a6040;
+  margin-bottom: 18px;
+}
+
+.drop-zone {
+  border: 2px dashed rgba(200,140,60,0.25);
+  border-radius: 10px; padding: 34px 24px;
+  text-align: center; cursor: pointer;
+  transition: all 0.25s; position: relative;
+}
+.drop-zone:hover, .drop-zone.over {
+  border-color: rgba(230,160,60,0.8);
+  background: rgba(220,140,50,0.06);
+  box-shadow: 0 0 40px rgba(220,130,40,0.08);
+}
+.drop-zone .icon { font-size: 38px; margin-bottom: 10px; opacity: 0.55; }
+.drop-zone .label {
+  font-size: 13px; letter-spacing: 3px;
+  text-transform: uppercase; color: #c89040; margin-bottom: 6px;
+}
+.drop-zone .sub { font-size: 11px; color: #5a4a30; }
+.drop-zone input[type="file"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+}
+
+.clip-queue { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; min-height: 44px; }
+.clip-tag {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(200,130,40,0.1);
+  border: 1px solid rgba(200,130,40,0.28);
+  border-radius: 7px; padding: 6px 10px 6px 12px;
+  font-size: 12px; color: #d4a860; cursor: default; transition: all 0.15s;
+}
+.clip-tag:hover { background: rgba(200,130,40,0.18); }
+.clip-tag .num { font-size: 10px; color: #8a6030; font-weight: 700; min-width: 14px; }
+.clip-tag .remove { font-size: 14px; color: #5a3a20; cursor: pointer; line-height: 1; padding: 0 2px; transition: color 0.15s; }
+.clip-tag .remove:hover { color: #ff5030; }
+.clip-tag.dragging { opacity: 0.35; }
+.queue-hint { font-size: 11px; color: #3a2a14; letter-spacing: 1px; padding-top: 4px; width: 100%; }
+
+.settings-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 640px) { .settings-grid { grid-template-columns: 1fr 1fr; } }
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field label { font-size: 9px; letter-spacing: 3px; text-transform: uppercase; color: #6a5030; }
+.field select,
+.field input[type="number"],
+.field input[type="text"] {
+  background: rgba(8,4,1,0.75);
+  border: 1px solid rgba(180,120,40,0.18);
+  color: #e0c880; padding: 10px 14px;
+  border-radius: 8px; font-size: 13px;
+  outline: none; appearance: none; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.field select:focus, .field input:focus {
+  border-color: rgba(230,160,60,0.55);
+  box-shadow: 0 0 0 3px rgba(220,140,50,0.07);
+}
+
+.music-drop {
+  display: flex; align-items: center; gap: 14px;
+  border: 1px dashed rgba(200,140,60,0.22);
+  border-radius: 9px; padding: 16px 20px;
+  cursor: pointer; transition: all 0.22s; position: relative;
+}
+.music-drop:hover, .music-drop.over { border-color: rgba(230,160,60,0.65); background: rgba(220,140,50,0.04); }
+.music-drop .icon { font-size: 24px; opacity: 0.65; }
+.music-drop .info { flex: 1; }
+.music-drop .info .name { font-size: 13px; color: #d4a860; }
+.music-drop .info .path { font-size: 11px; color: #503a1a; margin-top: 3px; font-family: monospace; }
+.music-drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+
+.path-input {
+  width: 100%; background: rgba(8,4,1,0.75);
+  border: 1px solid rgba(180,120,40,0.18);
+  color: #907840; padding: 10px 14px;
+  border-radius: 8px; font-size: 12px;
+  font-family: monospace; outline: none; transition: border-color 0.2s;
+}
+.path-input:focus { border-color: rgba(220,160,60,0.45); }
+
+.gen-btn {
+  width: 100%; padding: 20px;
+  background: linear-gradient(135deg, #6a3808, #b86020);
+  color: #fff5e8; border: none; border-radius: 11px;
+  font-size: 12px; letter-spacing: 6px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.22s;
+  box-shadow: 0 6px 36px rgba(190,100,20,0.22);
+}
+.gen-btn:hover {
+  background: linear-gradient(135deg, #8a4810, #d87030);
+  box-shadow: 0 6px 46px rgba(200,110,20,0.38);
+  transform: translateY(-2px);
+}
+.gen-btn:active { transform: translateY(0); }
+
+.output-box { display: none; }
+.output-box.visible { display: block; }
+
+.info-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.pill {
+  background: rgba(180,110,30,0.1); border: 1px solid rgba(180,110,30,0.22);
+  border-radius: 20px; padding: 4px 13px;
+  font-size: 11px; color: #8a6838; letter-spacing: 1px;
+}
+.pill span { color: #e0a840; }
+
+.cmd-block {
+  background: rgba(4,2,1,0.88); border: 1px solid rgba(180,110,30,0.18);
+  border-radius: 9px; padding: 18px;
+  font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #c8a050;
+  white-space: pre-wrap; word-break: break-all; line-height: 1.75;
+  margin-bottom: 14px; max-height: 260px; overflow-y: auto;
+}
+
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.copy-btn {
+  background: rgba(180,110,30,0.12); border: 1px solid rgba(180,110,30,0.28);
+  color: #907030; padding: 10px 22px; border-radius: 7px;
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.15s;
+}
+.copy-btn:hover { background: rgba(180,110,30,0.25); color: #e0a840; }
+.copy-btn.ok { border-color: #50a050; color: #50a050; }
+
+.run-btn {
+  flex: 1; padding: 10px 24px;
+  background: linear-gradient(135deg, #0c3d08, #1a7010);
+  color: #b8eea8; border: none; border-radius: 7px;
+  font-size: 11px; letter-spacing: 3px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.2s;
+  box-shadow: 0 3px 24px rgba(25,120,15,0.18);
+}
+.run-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #145510, #24961a);
+  box-shadow: 0 3px 32px rgba(30,150,18,0.32); transform: translateY(-1px);
+}
+.run-btn:active:not(:disabled) { transform: translateY(0); }
+.run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+
+.log-panel { display: none; margin-top: 16px; }
+.log-panel.visible { display: block; }
+.log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.log-box {
+  background: rgba(1,5,1,0.94); border: 1px solid rgba(40,130,25,0.18);
+  border-radius: 9px; padding: 16px;
+  font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: #44bb28;
+  white-space: pre-wrap; word-break: break-all; line-height: 1.65;
+  max-height: 280px; overflow-y: auto; margin-bottom: 12px;
+}
+.status-tag { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; padding: 4px 13px; border-radius: 20px; border: 1px solid; }
+.status-tag.running { color: #e0b040; border-color: rgba(220,160,40,0.38); background: rgba(220,160,40,0.07); }
+.status-tag.done    { color: #44c028; border-color: rgba(44,200,28,0.38);  background: rgba(44,200,28,0.07); }
+.status-tag.failed  { color: #e04830; border-color: rgba(220,50,30,0.38);  background: rgba(220,50,30,0.07); }
+
+.cancel-btn {
+  background: rgba(150,35,18,0.1); border: 1px solid rgba(150,35,18,0.28);
+  color: #703020; padding: 7px 16px; border-radius: 6px;
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; transition: all 0.15s;
+}
+.cancel-btn:hover { background: rgba(180,45,25,0.22); color: #e05040; }
+
+.server-notice {
+  background: rgba(180,110,20,0.08); border: 1px solid rgba(180,110,20,0.2);
+  border-radius: 9px; padding: 14px 18px;
+  font-size: 11px; color: #7a6030; line-height: 1.7; margin-top: 10px;
+}
+.server-notice code {
+  color: #c8a040; background: rgba(0,0,0,0.3);
+  padding: 1px 7px; border-radius: 4px; font-size: 11px;
+}
+
+.divider { height: 1px; background: rgba(180,110,30,0.1); margin: 6px 0 20px; }
+</style>
+</head>
+<body>
+
+<video id="bgVideo" autoplay muted playsinline loop></video>
+<div class="overlay"></div>
+
+<div class="page">
+
+  <header>
+    <h1>Surreal Editor</h1>
+    <p>Drag &nbsp;·&nbsp; Drop &nbsp;·&nbsp; Generate &nbsp;·&nbsp; Run</p>
+  </header>
+
+  <!-- 01 Clips -->
+  <div class="card">
+    <div class="step-badge">01 — Clips</div>
+    <div class="drop-zone" id="clipDropZone">
+      <input type="file" id="clipFileInput" multiple accept="video/*">
+      <div class="icon">🎬</div>
+      <div class="label">Drag your clips here</div>
+      <div class="sub">Drop multiple files at once &nbsp;·&nbsp; MP4, MOV, AVI, MKV, WebM</div>
+    </div>
+    <div class="clip-queue" id="clipQueue">
+      <div class="queue-hint">Clips appear here in order — drag to reorder</div>
+    </div>
+  </div>
+
+  <!-- 02 Settings -->
+  <div class="card">
+    <div class="step-badge">02 — Edit Settings</div>
+    <div class="settings-grid">
+      <div class="field">
+        <label>Resolution</label>
+        <select id="resolution">
+          <option value="1280:720">1280 × 720 — HD</option>
+          <option value="1920:1080">1920 × 1080 — Full HD</option>
+          <option value="1080:1920">1080 × 1920 — Vertical 9:16</option>
+          <option value="1080:1080">1080 × 1080 — Square</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Transition Style</label>
+        <select id="transition">
+          <option value="fade">Fade / Dissolve</option>
+          <option value="fadeblack">Fade to Black</option>
+          <option value="fadewhite">Fade to White</option>
+          <option value="pixelize">Pixelize — Glitch</option>
+          <option value="wipeleft">Wipe Left</option>
+          <option value="wiperight">Wipe Right</option>
+          <option value="slideleft">Slide Left</option>
+          <option value="radial">Radial</option>
+          <option value="dissolve">Dissolve</option>
+          <option value="squeezeh">Squeeze</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Transition Duration (s)</label>
+        <input type="number" id="xfadeDur" value="0.8" min="0.05" max="3" step="0.05">
+      </div>
+      <div class="field">
+        <label>Max Clip Length (s)</label>
+        <input type="number" id="clipDur" value="10" min="1" max="60" step="0.5">
+      </div>
+      <div class="field">
+        <label>Glitch Effects</label>
+        <select id="glitchMode">
+          <option value="none">None</option>
+          <option value="chroma" selected>Chromatic Aberration</option>
+          <option value="noise">Film Noise</option>
+          <option value="pixel">Pixel Burst</option>
+          <option value="combo">All — Full Glitch</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Flash Cuts</label>
+        <select id="flashMode">
+          <option value="off">Off</option>
+          <option value="some" selected>Some (every 4th cut)</option>
+          <option value="heavy">Heavy (every 2nd cut)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Color Grade</label>
+        <select id="colorGrade">
+          <option value="none">None</option>
+          <option value="warm_sunset">Warm Sunset</option>
+          <option value="faded_film">Faded Film</option>
+          <option value="moody_blue">Moody Blue</option>
+          <option value="bw">Black &amp; White</option>
+          <option value="hi_contrast">High Contrast</option>
+          <option value="golden_hour">Golden Hour</option>
+          <option value="cool_teal">Cool / Teal</option>
+          <option value="vintage_sepia">Vintage Sepia</option>
+          <option value="matte_lift">Matte / Lifted</option>
+          <option value="neon_pop">Neon Pop</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- 03 Music -->
+  <div class="card">
+    <div class="step-badge">03 — Music</div>
+    <div class="music-drop" id="musicDrop">
+      <input type="file" id="musicFileInput" accept="audio/*">
+      <div class="icon">🎵</div>
+      <div class="info">
+        <div class="name" id="musicName">Drop audio file here</div>
+        <div class="path" id="musicPath">MP3, WAV, AAC, AIFF &nbsp;·&nbsp; Trimmed to match video length</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04 Paths -->
+  <div class="card">
+    <div class="step-badge">04 — Directories</div>
+    <div class="settings-grid" style="grid-template-columns: 1fr 1fr;">
+      <div class="field">
+        <label>Clips Folder</label>
+        <input type="text" class="path-input" id="clipsDir"
+          value="/Users/lukeviviers/Desktop/Surrealism Ai videos"
+          placeholder="/path/to/your/clips">
+      </div>
+      <div class="field">
+        <label>Output File</label>
+        <input type="text" class="path-input" id="outputPath"
+          value="/Users/lukeviviers/Desktop/Surreal_compilation.mp4"
+          placeholder="/path/to/output.mp4">
+      </div>
+    </div>
+    <div class="divider"></div>
+    <div class="field">
+      <label>FFmpeg Path</label>
+      <input type="text" class="path-input" id="ffmpegPath"
+        value="ffmpeg"
+        placeholder="ffmpeg">
+    </div>
+  </div>
+
+  <button class="gen-btn" onclick="generate()">Generate &amp; Render</button>
+
+  <!-- Output -->
+  <div class="card output-box" id="outputBox" style="margin-top:18px;">
+    <div class="card-title">Generated Command — Copy &amp; Run in Terminal</div>
+    <div class="info-pills" id="infoPills"></div>
+    <div class="cmd-block" id="cmdBlock"></div>
+    <div class="btn-row">
+      <button class="copy-btn" id="copyBtn" onclick="copyCmd()">Copy Command</button>
+      <button class="run-btn" id="runBtn" onclick="runCmd()">&#9654; &nbsp;Run It</button>
+    </div>
+    <div class="server-notice" id="serverNotice" style="display:none;">
+      <strong style="color:#c8a040;">To use Run It directly</strong> — open Terminal and type:<br>
+      <code>python3 SurrealEditor.py</code><br>
+      Then visit <code>http://localhost:8877</code> — the Run It button will work from there.
+    </div>
+  </div>
+
+  <!-- Log panel -->
+  <div class="card log-panel" id="logPanel">
+    <div class="log-header">
+      <div class="card-title" style="margin-bottom:0;">FFmpeg Output</div>
+      <span class="status-tag running" id="statusTag">Running</span>
+    </div>
+    <div class="log-box" id="logBox"></div>
+    <button class="cancel-btn" id="cancelBtn" onclick="cancelRun()">Cancel</button>
+  </div>
+
+</div>
+
+<script>
+const BG_CLIPS = [
+  "Surrealism Ai videos/Dark church.mp4",
+  "Surrealism Ai videos/Light streams.mp4",
+  "Surrealism Ai videos/Storm brewing.mp4",
+  "Surrealism Ai videos/Crow timelapse.mp4",
+  "Surrealism Ai videos/Red ghost.mp4",
+  "Surrealism Ai videos/Nuclear bomb.mp4",
+  "Surrealism Ai videos/Bird glide.mp4",
+  "Surrealism Ai videos/Levitating.mp4",
+];
+let bgIdx = 0;
+const bgVideo = document.getElementById('bgVideo');
+function nextBg() { bgIdx = (bgIdx + 1) % BG_CLIPS.length; bgVideo.src = BG_CLIPS[bgIdx]; bgVideo.play().catch(()=>{}); }
+bgVideo.src = BG_CLIPS[0];
+bgVideo.addEventListener('ended', nextBg);
+bgVideo.addEventListener('error', nextBg);
+
+// ON_SERVER: true when served over HTTP/HTTPS (local python server or Railway)
+const ON_SERVER = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+
+let clips = [], musicFile = null, _lastCmd = '', _jobId = null, _evtSrc = null;
+
+const clipZone  = document.getElementById('clipDropZone');
+const clipInput = document.getElementById('clipFileInput');
+clipZone.addEventListener('dragover',  e => { e.preventDefault(); clipZone.classList.add('over'); });
+clipZone.addEventListener('dragleave', () => clipZone.classList.remove('over'));
+clipZone.addEventListener('drop', e => { e.preventDefault(); clipZone.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
+clipInput.addEventListener('change', e => addFiles([...e.target.files]));
+
+function stripExt(n) { return n.replace(/\.[^/.]+$/, ''); }
+function addFiles(files) {
+  files.filter(f => f.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(f.name))
+       .forEach(f => clips.push({ name: stripExt(f.name), fullName: f.name }));
+  renderQueue();
+}
+function renderQueue() {
+  const q = document.getElementById('clipQueue');
+  if (!clips.length) { q.innerHTML = '<div class="queue-hint">Clips appear here in order — drag to reorder</div>'; return; }
+  q.innerHTML = clips.map((c, i) => `
+    <div class="clip-tag" draggable="true"
+      ondragstart="dStart(event,${i})" ondragover="dOver(event)" ondrop="dDrop(event,${i})">
+      <span class="num">${i+1}</span><span>${c.name}</span>
+      <span class="remove" onclick="removeClip(${i})">&#215;</span>
+    </div>`).join('') +
+    `<div class="queue-hint" style="margin-top:4px;">${clips.length} clip${clips.length!==1?'s':''} &nbsp;·&nbsp; drag to reorder</div>`;
+}
+function removeClip(i) { clips.splice(i,1); renderQueue(); }
+
+let dragSrc = null;
+function dStart(e,i) { dragSrc=i; e.currentTarget.classList.add('dragging'); }
+function dOver(e) { e.preventDefault(); }
+function dDrop(e,i) { e.preventDefault(); if(dragSrc===null||dragSrc===i)return; clips.splice(i,0,clips.splice(dragSrc,1)[0]); dragSrc=null; renderQueue(); }
+
+const musicDrop  = document.getElementById('musicDrop');
+const musicInput = document.getElementById('musicFileInput');
+musicDrop.addEventListener('dragover',  e => { e.preventDefault(); musicDrop.classList.add('over'); });
+musicDrop.addEventListener('dragleave', () => musicDrop.classList.remove('over'));
+musicDrop.addEventListener('drop', e => { e.preventDefault(); musicDrop.classList.remove('over'); if(e.dataTransfer.files[0]) setMusic(e.dataTransfer.files[0]); });
+musicInput.addEventListener('change', e => { if(e.target.files[0]) setMusic(e.target.files[0]); });
+function setMusic(f) { musicFile={name:f.name}; document.getElementById('musicName').textContent=stripExt(f.name); document.getElementById('musicPath').textContent=f.name; }
+
+function generate() {
+  if (clips.length < 2) { alert('Add at least 2 clips first.'); return; }
+  const res=document.getElementById('resolution').value, [W,H]=res.split(':');
+  const trans=document.getElementById('transition').value;
+  const xfade=parseFloat(document.getElementById('xfadeDur').value);
+  const maxDur=parseFloat(document.getElementById('clipDur').value);
+  const glitch=document.getElementById('glitchMode').value;
+  const flash=document.getElementById('flashMode').value;
+  const grade=document.getElementById('colorGrade').value;
+  const clipsDir=document.getElementById('clipsDir').value.trim();
+  const outPath=document.getElementById('outputPath').value.trim();
+  const ffmpeg=document.getElementById('ffmpegPath').value.trim();
+  const hasMusic=!!musicFile;
+
+  const GLITCH_FX={none:'',chroma:',rgbashift=rh=10:bh=-10:rv=0:bv=0',noise:',noise=c0s=22:allf=t',pixel:',pixelize=width=14:height=14',combo:',rgbashift=rh=8:bh=-8,noise=c0s=15:allf=t'};
+  const COLOR_GRADE_FX={
+    none:'',
+    warm_sunset:"curves=r='0/0 0.5/0.6 1/1':g='0/0 0.5/0.5 1/0.9':b='0/0 0.5/0.38 1/0.78',eq=contrast=1.15:saturation=1.3",
+    faded_film:"curves=all='0/0.06 1/0.94',eq=saturation=0.7:contrast=0.88",
+    moody_blue:"colorbalance=bs=0.2:bm=0.12:bh=0.05:rs=-0.08:rm=-0.05,eq=contrast=1.12:brightness=-0.04:saturation=0.88",
+    bw:"hue=s=0,curves=all='0/0 0.3/0.2 0.7/0.8 1/1'",
+    hi_contrast:"eq=contrast=1.35:saturation=1.15,curves=all='0/0 0.2/0.14 0.8/0.88 1/1'",
+    golden_hour:"curves=r='0/0 0.5/0.65 1/1':g='0/0 0.5/0.52 1/0.92':b='0/0 0.5/0.33 1/0.72',eq=saturation=1.5:brightness=0.04",
+    cool_teal:"colorbalance=bs=0.25:bm=0.15:rs=-0.12:rm=-0.08,eq=saturation=0.82:contrast=1.08",
+    vintage_sepia:"colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131,eq=brightness=0.03:contrast=0.9",
+    matte_lift:"curves=all='0/0.06 1/0.93',eq=contrast=1.05:saturation=0.9",
+    neon_pop:"eq=saturation=2.0:contrast=1.1"
+  };
+
+  const N=clips.length, clipDur=maxDur;
+  let lines=[ffmpeg];
+  clips.forEach(c=>lines.push(`  -ss 0 -t ${clipDur} -i "${clipsDir}/${c.fullName}"`));
+  if(hasMusic) lines.push(`  -i "${musicFile.name}"`);
+
+  let filters=[];
+  clips.forEach((_,i)=>{
+    const g=glitch!=='none'?GLITCH_FX[glitch]:'';
+    filters.push(`[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},setsar=1,format=yuv420p${g}[v${i}]`);
+  });
+  let offset=0,prev='v0';
+  for(let i=1;i<N;i++){
+    offset+=clipDur-xfade;
+    let t=trans;
+    if(flash==='some'&&i%4===0)t='fadeblack';
+    if(flash==='heavy'&&i%2===0)t='fadeblack';
+    const out=i===N-1?'vout':`x${i}`;
+    filters.push(`[${prev}][v${i}]xfade=transition=${t}:duration=${xfade}:offset=${offset.toFixed(3)}[${out}]`);
+    prev=out;
+  }
+  const totalDur=clipDur*N-xfade*(N-1), fadeAt=Math.max(totalDur-2.5,totalDur*0.88);
+  const gradeFx=COLOR_GRADE_FX[grade]||'', finalVTag=gradeFx?'vfinal':'vout';
+  if(gradeFx) filters.push(`[vout]${gradeFx}[vfinal]`);
+  if(hasMusic) filters.push(`[${N}:a]afade=t=out:st=${fadeAt.toFixed(2)}:d=2.5[aout]`);
+
+  lines.push(`  -filter_complex "`);
+  lines.push(filters.join(';\n')+`"`);
+  lines.push('  \\');
+  lines.push(`  -map "[${finalVTag}]"${hasMusic?' -map "[aout]"':''} \\`);
+  lines.push(`  -c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20 \\`);
+  if(hasMusic) lines.push(`  -c:a aac -b:a 192k \\`);
+  lines.push(`  -movflags +faststart -shortest \\`);
+  lines.push(`  "${outPath}" -y`);
+  _lastCmd=lines.join('\n');
+
+  const mins=Math.floor(totalDur/60), secs=Math.round(totalDur%60);
+  document.getElementById('infoPills').innerHTML=[
+    `<div class="pill"><span>${N}</span> clips</div>`,
+    `<div class="pill">~<span>${mins}m ${secs}s</span></div>`,
+    `<div class="pill"><span>${W}x${H}</span></div>`,
+    `<div class="pill">Transition: <span>${trans}</span></div>`,
+    `<div class="pill">Glitch: <span>${glitch}</span></div>`,
+    grade!=='none'?`<div class="pill">Grade: <span>${grade.replace(/_/g,' ')}</span></div>`:'',
+    hasMusic?`<div class="pill">Music: <span>${musicFile.name}</span></div>`:''
+  ].join('');
+
+  document.getElementById('cmdBlock').textContent=_lastCmd;
+  const box=document.getElementById('outputBox');
+  const runBtn=document.getElementById('runBtn');
+  const notice=document.getElementById('serverNotice');
+  const copyBtn=document.getElementById('copyBtn');
+  box.classList.add('visible');
+  copyBtn.textContent='Copy Command'; copyBtn.classList.remove('ok');
+  document.getElementById('logPanel').classList.remove('visible');
+  if(ON_SERVER){
+    runBtn.style.display=''; runBtn.textContent='&#9654; Run It'; runBtn.disabled=false; notice.style.display='none';
+    box.scrollIntoView({behavior:'smooth',block:'start'});
+  } else {
+    runBtn.style.display='none'; notice.style.display='';
+    box.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+}
+
+function copyCmd() {
+  navigator.clipboard.writeText(_lastCmd).then(()=>{
+    const btn=document.getElementById('copyBtn');
+    btn.textContent='Copied!'; btn.classList.add('ok');
+    setTimeout(()=>{ btn.textContent='Copy Command'; btn.classList.remove('ok'); },2200);
+  });
+}
+
+function runCmd() {
+  if(!_lastCmd) return;
+  const runBtn=document.getElementById('runBtn'), logPanel=document.getElementById('logPanel');
+  const logBox=document.getElementById('logBox'), statusTag=document.getElementById('statusTag');
+  const cancelBtn=document.getElementById('cancelBtn');
+  runBtn.disabled=true; runBtn.textContent='Running...';
+  logBox.textContent=''; logPanel.classList.add('visible');
+  statusTag.textContent='Running'; statusTag.className='status-tag running';
+  cancelBtn.style.display=''; logPanel.scrollIntoView({behavior:'smooth',block:'start'});
+  if(_evtSrc){_evtSrc.close();_evtSrc=null;}
+  fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:_lastCmd})})
+  .then(r=>{if(!r.ok)throw new Error('Server error');return r.json();})
+  .then(({job_id})=>{
+    _jobId=job_id;
+    const es=new EventSource('/progress/'+job_id); _evtSrc=es;
+    es.onmessage=e=>{logBox.textContent+=e.data+'\n';logBox.scrollTop=logBox.scrollHeight;};
+    es.addEventListener('done',e=>{
+      es.close();_evtSrc=null; cancelBtn.style.display='none';
+      const rc=parseInt(e.data,10);
+      if(rc===0){statusTag.textContent='Done!';statusTag.className='status-tag done';runBtn.textContent='Run Again';}
+      else{statusTag.textContent='Failed ('+rc+')';statusTag.className='status-tag failed';runBtn.textContent='Retry';}
+      runBtn.disabled=false;
+    });
+    es.onerror=()=>{es.close();_evtSrc=null;statusTag.textContent='Lost connection';statusTag.className='status-tag failed';runBtn.textContent='Retry';runBtn.disabled=false;};
+  })
+  .catch(err=>{logBox.textContent='Error: '+err.message;statusTag.textContent='Error';statusTag.className='status-tag failed';runBtn.textContent='Retry';runBtn.disabled=false;cancelBtn.style.display='none';});
+}
+
+function cancelRun() {
+  if(_jobId){fetch('/cancel/'+_jobId);_jobId=null;}
+  if(_evtSrc){_evtSrc.close();_evtSrc=null;}
+  document.getElementById('statusTag').textContent='Cancelled';
+  document.getElementById('statusTag').className='status-tag failed';
+  document.getElementById('runBtn').textContent='Run It'; document.getElementById('runBtn').disabled=false;
+  document.getElementById('cancelBtn').style.display='none';
+}
+</script>
+</body>
+</html>
