@@ -2,14 +2,23 @@
 import http.server
 import json
 import os
+import socketserver
 import subprocess
 import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 PORT = int(os.environ.get('PORT', 8877))
 BASE_DIR = Path(__file__).parent
+
+UPLOAD_DIR = Path('/tmp/surreal_uploads')
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    daemon_threads = True
 
 jobs = {}  # job_id -> {process, lines, done, returncode}
 
@@ -25,6 +34,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.stream_progress(self.path[len('/progress/'):])
         elif self.path.startswith('/cancel/'):
             self.cancel_job(self.path[len('/cancel/'):])
+        elif self.path.startswith('/files/'):
+            fname = Path(self.path[len('/files/'):].replace('%20', ' ')).name
+            file_path = Path('/tmp') / fname
+            if file_path.exists() and file_path.is_file():
+                self.serve_video(file_path)
+            else:
+                self.send_error(404)
         else:
             rel = self.path.lstrip('/').replace('%20', ' ')
             file_path = BASE_DIR / rel
@@ -61,6 +77,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(json.dumps({'job_id': job_id}).encode())
+        elif self.path.startswith('/upload'):
+            qs = parse_qs(urlparse(self.path).query)
+            filename = Path(qs.get('name', ['upload'])[0]).name
+            length = int(self.headers.get('Content-Length', 0))
+            data = self.rfile.read(length)
+            dest = UPLOAD_DIR / filename
+            dest.write_bytes(data)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps({'path': str(dest)}).encode())
         else:
             self.send_error(404)
 
@@ -150,7 +178,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == '__main__':
-    server = http.server.HTTPServer(('0.0.0.0', PORT), Handler)
+    server = ThreadingHTTPServer(('0.0.0.0', PORT), Handler)
     print(f'Surreal Editor  →  http://0.0.0.0:{PORT}')
     print('Press Ctrl+C to stop.')
     try:

@@ -241,6 +241,12 @@ header p {
 }
 
 .divider { height: 1px; background: rgba(180,110,30,0.1); margin: 6px 0 20px; }
+
+.clip-tag.uploading { opacity: 0.55; }
+.clip-tag.uploading .num { color: #c89040; animation: pulse 1s infinite; }
+.clip-tag.upload-err { border-color: rgba(220,50,30,0.4); color: #c05040; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.upload-hint { font-size: 11px; color: #c89040; letter-spacing: 1px; padding: 8px 0; width: 100%; }
 </style>
 </head>
 <body>
@@ -406,7 +412,11 @@ header p {
       <span class="status-tag running" id="statusTag">Running</span>
     </div>
     <div class="log-box" id="logBox"></div>
-    <button class="cancel-btn" id="cancelBtn" onclick="cancelRun()">Cancel</button>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <button class="cancel-btn" id="cancelBtn" onclick="cancelRun()">Cancel</button>
+      <a id="dlBtn" href="/files/surreal_out.mp4" download="surreal_compilation.mp4"
+        class="copy-btn" style="display:none;text-decoration:none;">&#8595;&nbsp; Download</a>
+    </div>
   </div>
 
 </div>
@@ -432,7 +442,7 @@ bgVideo.addEventListener('error', nextBg);
 // ON_SERVER: true when served over HTTP/HTTPS (local python server or Railway)
 const ON_SERVER = window.location.protocol === 'http:' || window.location.protocol === 'https:';
 
-let clips = [], musicFile = null, _lastCmd = '', _execCmd = '', _jobId = null, _evtSrc = null;
+let clips = [], musicFile = null, _lastCmd = '', _execCmd = '', _jobId = null, _evtSrc = null, _uploading = 0;
 
 const clipZone  = document.getElementById('clipDropZone');
 const clipInput = document.getElementById('clipFileInput');
@@ -442,22 +452,45 @@ clipZone.addEventListener('drop', e => { e.preventDefault(); clipZone.classList.
 clipInput.addEventListener('change', e => addFiles([...e.target.files]));
 
 function stripExt(n) { return n.replace(/\.[^/.]+$/, ''); }
+
+function uploadFile(file) {
+  return fetch('/upload?name=' + encodeURIComponent(file.name), {
+    method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file
+  }).then(r => r.json());
+}
+
 function addFiles(files) {
   files.filter(f => f.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(f.name))
-       .forEach(f => clips.push({ name: stripExt(f.name), fullName: f.name }));
+       .forEach(f => {
+         const clip = { name: stripExt(f.name), fullName: f.name, serverPath: null, uploading: ON_SERVER };
+         clips.push(clip);
+         if (ON_SERVER) {
+           _uploading++;
+           renderQueue();
+           uploadFile(f)
+             .then(({path}) => { clip.serverPath = path; clip.uploading = false; _uploading--; renderQueue(); })
+             .catch(() => { clip.uploading = false; clip.uploadErr = true; _uploading--; renderQueue(); });
+         }
+       });
   renderQueue();
 }
+
 function renderQueue() {
   const q = document.getElementById('clipQueue');
-  if (!clips.length) { q.innerHTML = '<div class="queue-hint">Clips appear here in order — drag to reorder</div>'; return; }
+  const genBtn = document.querySelector('.gen-btn');
+  if (!clips.length) { q.innerHTML = '<div class="queue-hint">Clips appear here in order — drag to reorder</div>'; if(genBtn)genBtn.disabled=false; return; }
   q.innerHTML = clips.map((c, i) => `
-    <div class="clip-tag" draggable="true"
+    <div class="clip-tag${c.uploading?' uploading':''}${c.uploadErr?' upload-err':''}" draggable="${!c.uploading}"
       ondragstart="dStart(event,${i})" ondragover="dOver(event)" ondrop="dDrop(event,${i})">
-      <span class="num">${i+1}</span><span>${c.name}</span>
+      <span class="num">${c.uploading?'↑':c.uploadErr?'✕':i+1}</span><span>${c.name}</span>
       <span class="remove" onclick="removeClip(${i})">&#215;</span>
     </div>`).join('') +
-    `<div class="queue-hint" style="margin-top:4px;">${clips.length} clip${clips.length!==1?'s':''} &nbsp;·&nbsp; drag to reorder</div>`;
+    (_uploading > 0
+      ? `<div class="upload-hint">Uploading ${_uploading} file${_uploading!==1?'s':''}… please wait</div>`
+      : `<div class="queue-hint" style="margin-top:4px;">${clips.length} clip${clips.length!==1?'s':''} &nbsp;·&nbsp; drag to reorder</div>`);
+  if (genBtn) genBtn.disabled = _uploading > 0;
 }
+
 function removeClip(i) { clips.splice(i,1); renderQueue(); }
 
 let dragSrc = null;
@@ -471,10 +504,23 @@ musicDrop.addEventListener('dragover',  e => { e.preventDefault(); musicDrop.cla
 musicDrop.addEventListener('dragleave', () => musicDrop.classList.remove('over'));
 musicDrop.addEventListener('drop', e => { e.preventDefault(); musicDrop.classList.remove('over'); if(e.dataTransfer.files[0]) setMusic(e.dataTransfer.files[0]); });
 musicInput.addEventListener('change', e => { if(e.target.files[0]) setMusic(e.target.files[0]); });
-function setMusic(f) { musicFile={name:f.name}; document.getElementById('musicName').textContent=stripExt(f.name); document.getElementById('musicPath').textContent=f.name; }
+function setMusic(f) {
+  musicFile = { name: f.name, serverPath: null };
+  document.getElementById('musicName').textContent = stripExt(f.name);
+  document.getElementById('musicPath').textContent = ON_SERVER ? 'Uploading…' : f.name;
+  if (ON_SERVER) {
+    _uploading++;
+    renderQueue();
+    uploadFile(f)
+      .then(({path}) => { musicFile.serverPath = path; _uploading--; document.getElementById('musicPath').textContent = f.name; renderQueue(); })
+      .catch(() => { _uploading--; document.getElementById('musicPath').textContent = 'Upload failed'; renderQueue(); });
+  }
+}
 
 function generate() {
   if (clips.length < 2) { alert('Add at least 2 clips first.'); return; }
+  if (_uploading > 0) { alert('Still uploading — please wait.'); return; }
+  if (ON_SERVER && clips.some(c => !c.serverPath)) { alert('Some clips failed to upload. Remove them and re-add.'); return; }
   const res=document.getElementById('resolution').value, [W,H]=res.split(':');
   const trans=document.getElementById('transition').value;
   const xfade=parseFloat(document.getElementById('xfadeDur').value);
@@ -483,7 +529,7 @@ function generate() {
   const flash=document.getElementById('flashMode').value;
   const grade=document.getElementById('colorGrade').value;
   const clipsDir=document.getElementById('clipsDir').value.trim();
-  const outPath=document.getElementById('outputPath').value.trim();
+  const outPath=ON_SERVER?'/tmp/surreal_out.mp4':document.getElementById('outputPath').value.trim();
   const ffmpeg=document.getElementById('ffmpegPath').value.trim();
   const hasMusic=!!musicFile;
 
@@ -504,8 +550,8 @@ function generate() {
 
   const N=clips.length, clipDur=maxDur;
   let lines=[ffmpeg];
-  clips.forEach(c=>lines.push(`  -ss 0 -t ${clipDur} -i "${clipsDir}/${c.fullName}"`));
-  if(hasMusic) lines.push(`  -i "${musicFile.name}"`);
+  clips.forEach(c=>lines.push(`  -ss 0 -t ${clipDur} -i "${ON_SERVER&&c.serverPath?c.serverPath:clipsDir+'/'+c.fullName}"`));
+  if(hasMusic) lines.push(`  -i "${ON_SERVER&&musicFile.serverPath?musicFile.serverPath:musicFile.name}"`);
 
   let filters=[];
   clips.forEach((_,i)=>{
@@ -538,8 +584,8 @@ function generate() {
   _lastCmd=lines.join('\n');
 
   const ep=[ffmpeg];
-  clips.forEach(c=>ep.push(`-ss 0 -t ${clipDur} -i "${clipsDir}/${c.fullName}"`));
-  if(hasMusic) ep.push(`-i "${musicFile.name}"`);
+  clips.forEach(c=>ep.push(`-ss 0 -t ${clipDur} -i "${ON_SERVER&&c.serverPath?c.serverPath:clipsDir+'/'+c.fullName}"`));
+  if(hasMusic) ep.push(`-i "${ON_SERVER&&musicFile.serverPath?musicFile.serverPath:musicFile.name}"`);
   ep.push(`-filter_complex "${filters.join(';')}"`);
   ep.push(`-map "[${finalVTag}]"`);
   if(hasMusic) ep.push(`-map "[aout]"`);
@@ -590,6 +636,7 @@ function runCmd() {
   const runBtn=document.getElementById('runBtn'), logPanel=document.getElementById('logPanel');
   const logBox=document.getElementById('logBox'), statusTag=document.getElementById('statusTag');
   const cancelBtn=document.getElementById('cancelBtn');
+  const dlBtn=document.getElementById('dlBtn'); if(dlBtn)dlBtn.style.display='none';
   runBtn.disabled=true; runBtn.textContent='Running...';
   logBox.textContent=''; logPanel.classList.add('visible');
   statusTag.textContent='Running'; statusTag.className='status-tag running';
@@ -604,7 +651,7 @@ function runCmd() {
     es.addEventListener('done',e=>{
       es.close();_evtSrc=null; cancelBtn.style.display='none';
       const rc=parseInt(e.data,10);
-      if(rc===0){statusTag.textContent='Done!';statusTag.className='status-tag done';runBtn.textContent='Run Again';}
+      if(rc===0){statusTag.textContent='Done!';statusTag.className='status-tag done';runBtn.textContent='Run Again';if(ON_SERVER&&dlBtn)dlBtn.style.display='';}
       else{statusTag.textContent='Failed ('+rc+')';statusTag.className='status-tag failed';runBtn.textContent='Retry';}
       runBtn.disabled=false;
     });
