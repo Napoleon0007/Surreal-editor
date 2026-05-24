@@ -17,7 +17,7 @@ body {
 
 #bgVideo {
   position: fixed; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scale(0.85);
   max-width: 100%; max-height: 100%;
   width: auto; height: auto;
   z-index: 0;
@@ -424,7 +424,7 @@ header p {
 
 <script>
 const BG_CLIPS = [
-  "Claude projects /Surreal-editor/Charlie chaplin 2.mp4",
+  "Charlie chaplin 2.mp4",
 ];
 let bgIdx = 0;
 const bgVideo = document.getElementById('bgVideo');
