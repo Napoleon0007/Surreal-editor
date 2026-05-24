@@ -433,7 +433,7 @@ bgVideo.play().catch(()=>{});
 bgVideo.addEventListener('ended', nextBg);
 bgVideo.addEventListener('error', nextBg);
 
-const ON_SERVER = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
+const ON_SERVER = window.location.protocol !== 'file:';
 
 let clips = [], musicFile = null, _lastCmd = '', _jobId = null, _evtSrc = null;
 
