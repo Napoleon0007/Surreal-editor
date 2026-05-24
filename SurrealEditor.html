@@ -18,14 +18,7 @@ body {
 #bgVideo {
   position: fixed; top: 0; left: 0;
   width: 100%; height: 100%;
-  object-fit: cover; z-index: 0;
-  filter: blur(5px) brightness(0.28) saturate(1.5);
-  transform: scale(1.06);
-}
-.overlay {
-  position: fixed; inset: 0;
-  background: linear-gradient(155deg, rgba(8,3,1,0.75) 0%, rgba(4,1,10,0.82) 100%);
-  z-index: 1;
+  object-fit: contain; z-index: 0;
 }
 
 .page {
@@ -241,18 +234,11 @@ header p {
 }
 
 .divider { height: 1px; background: rgba(180,110,30,0.1); margin: 6px 0 20px; }
-
-.clip-tag.uploading { opacity: 0.55; }
-.clip-tag.uploading .num { color: #c89040; animation: pulse 1s infinite; }
-.clip-tag.upload-err { border-color: rgba(220,50,30,0.4); color: #c05040; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-.upload-hint { font-size: 11px; color: #c89040; letter-spacing: 1px; padding: 8px 0; width: 100%; }
 </style>
 </head>
 <body>
 
 <video id="bgVideo" autoplay muted playsinline loop></video>
-<div class="overlay"></div>
 
 <div class="page">
 
@@ -330,6 +316,14 @@ header p {
         </select>
       </div>
       <div class="field">
+        <label>Output Quality</label>
+        <select id="quality">
+          <option value="26:medium">Balanced — Good size</option>
+          <option value="20:fast">High Quality — Large file</option>
+          <option value="30:medium">Web / Phone — Small file</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Color Grade</label>
         <select id="colorGrade">
           <option value="none">None</option>
@@ -345,23 +339,6 @@ header p {
           <option value="neon_pop">Neon Pop</option>
         </select>
       </div>
-      <div class="field">
-        <label>Output Format</label>
-        <select id="outputFormat" onchange="updateOutputExt()">
-          <option value="mp4_h264">MP4 — H.264 (most compatible)</option>
-          <option value="mov_h264">MOV — H.264 (macOS / Pro)</option>
-          <option value="mkv_h264">MKV — H.264 (open container)</option>
-          <option value="mp4_h265">MP4 — H.265 / HEVC (smaller file)</option>
-          <option value="webm_vp9">WebM — VP9 (web / browser)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Smart Crop</label>
-        <select id="smartCrop">
-          <option value="off">Off — Centre crop</option>
-          <option value="on">On — Subject aware</option>
-        </select>
-      </div>
     </div>
   </div>
 
@@ -373,8 +350,14 @@ header p {
       <div class="icon">🎵</div>
       <div class="info">
         <div class="name" id="musicName">Drop audio file here</div>
-        <div class="path" id="musicPath">MP3, WAV, AAC, AIFF &nbsp;·&nbsp; Trimmed to match video length</div>
+        <div class="path" id="musicPathHint">MP3, WAV, AAC, AIFF &nbsp;·&nbsp; Trimmed to match video length</div>
       </div>
+    </div>
+    <div class="divider" style="margin-top:16px;"></div>
+    <div class="field" style="margin-top:4px;">
+      <label>Music File Path</label>
+      <input type="text" class="path-input" id="musicFilePath"
+        placeholder="/path/to/your/track.mp3">
     </div>
   </div>
 
@@ -399,8 +382,8 @@ header p {
     <div class="field">
       <label>FFmpeg Path</label>
       <input type="text" class="path-input" id="ffmpegPath"
-        value="ffmpeg"
-        placeholder="ffmpeg">
+        value="/tmp/ffmpeg_bin/ffmpeg"
+        placeholder="/usr/local/bin/ffmpeg">
     </div>
   </div>
 
@@ -417,7 +400,7 @@ header p {
     </div>
     <div class="server-notice" id="serverNotice" style="display:none;">
       <strong style="color:#c8a040;">To use Run It directly</strong> — open Terminal and type:<br>
-      <code>python3 SurrealEditor.py</code><br>
+      <code>python3 /Users/lukeviviers/Desktop/SurrealEditor.py</code><br>
       Then visit <code>http://localhost:8877</code> — the Run It button will work from there.
     </div>
   </div>
@@ -429,10 +412,9 @@ header p {
       <span class="status-tag running" id="statusTag">Running</span>
     </div>
     <div class="log-box" id="logBox"></div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
       <button class="cancel-btn" id="cancelBtn" onclick="cancelRun()">Cancel</button>
-      <a id="dlBtn" href="/files/surreal_out.mp4" download="surreal_compilation.mp4"
-        class="copy-btn" style="display:none;text-decoration:none;">&#8595;&nbsp; Download</a>
+      <a class="run-btn" id="downloadBtn" style="display:none;text-decoration:none;text-align:center;padding:10px 24px;" download>&#8595; &nbsp;Download Video</a>
     </div>
   </div>
 
@@ -440,33 +422,20 @@ header p {
 
 <script>
 const BG_CLIPS = [
-  "Surrealism Ai videos/Dark church.mp4",
-  "Surrealism Ai videos/Light streams.mp4",
-  "Surrealism Ai videos/Storm brewing.mp4",
-  "Surrealism Ai videos/Crow timelapse.mp4",
-  "Surrealism Ai videos/Red ghost.mp4",
-  "Surrealism Ai videos/Nuclear bomb.mp4",
-  "Surrealism Ai videos/Bird glide.mp4",
-  "Surrealism Ai videos/Levitating.mp4",
+  "Claude projects /Surreal-editor/Charlie chaplin 2.mp4",
 ];
 let bgIdx = 0;
 const bgVideo = document.getElementById('bgVideo');
 function nextBg() { bgIdx = (bgIdx + 1) % BG_CLIPS.length; bgVideo.src = BG_CLIPS[bgIdx]; bgVideo.play().catch(()=>{}); }
 bgVideo.src = BG_CLIPS[0];
+bgVideo.load();
+bgVideo.play().catch(()=>{});
 bgVideo.addEventListener('ended', nextBg);
 bgVideo.addEventListener('error', nextBg);
 
-// ON_SERVER: true when served over HTTP/HTTPS (local python server or Railway)
-const ON_SERVER = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+const ON_SERVER = window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost';
 
-let clips = [], musicFile = null, _lastCmd = '', _execCmd = '', _jobId = null, _evtSrc = null, _uploading = 0;
-
-const FORMAT_EXT = { mp4_h264:'mp4', mov_h264:'mov', mkv_h264:'mkv', mp4_h265:'mp4', webm_vp9:'webm' };
-function updateOutputExt() {
-  const ext = FORMAT_EXT[document.getElementById('outputFormat').value] || 'mp4';
-  const el = document.getElementById('outputPath');
-  el.value = el.value.replace(/\.[^.]+$/, '') + '.' + ext;
-}
+let clips = [], musicFile = null, _lastCmd = '', _jobId = null, _evtSrc = null;
 
 const clipZone  = document.getElementById('clipDropZone');
 const clipInput = document.getElementById('clipFileInput');
@@ -476,45 +445,22 @@ clipZone.addEventListener('drop', e => { e.preventDefault(); clipZone.classList.
 clipInput.addEventListener('change', e => addFiles([...e.target.files]));
 
 function stripExt(n) { return n.replace(/\.[^/.]+$/, ''); }
-
-function uploadFile(file) {
-  return fetch('/upload?name=' + encodeURIComponent(file.name), {
-    method: 'POST', headers: {'Content-Type': 'application/octet-stream'}, body: file
-  }).then(r => r.json());
-}
-
 function addFiles(files) {
   files.filter(f => f.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(f.name))
-       .forEach(f => {
-         const clip = { name: stripExt(f.name), fullName: f.name, serverPath: null, uploading: ON_SERVER };
-         clips.push(clip);
-         if (ON_SERVER) {
-           _uploading++;
-           renderQueue();
-           uploadFile(f)
-             .then(({path}) => { clip.serverPath = path; clip.uploading = false; _uploading--; renderQueue(); })
-             .catch(() => { clip.uploading = false; clip.uploadErr = true; _uploading--; renderQueue(); });
-         }
-       });
+       .forEach(f => clips.push({ name: stripExt(f.name), fullName: f.name }));
   renderQueue();
 }
-
 function renderQueue() {
   const q = document.getElementById('clipQueue');
-  const genBtn = document.querySelector('.gen-btn');
-  if (!clips.length) { q.innerHTML = '<div class="queue-hint">Clips appear here in order — drag to reorder</div>'; if(genBtn)genBtn.disabled=false; return; }
+  if (!clips.length) { q.innerHTML = '<div class="queue-hint">Clips appear here in order — drag to reorder</div>'; return; }
   q.innerHTML = clips.map((c, i) => `
-    <div class="clip-tag${c.uploading?' uploading':''}${c.uploadErr?' upload-err':''}" draggable="${!c.uploading}"
+    <div class="clip-tag" draggable="true"
       ondragstart="dStart(event,${i})" ondragover="dOver(event)" ondrop="dDrop(event,${i})">
-      <span class="num">${c.uploading?'↑':c.uploadErr?'✕':i+1}</span><span>${c.name}</span>
+      <span class="num">${i+1}</span><span>${c.name}</span>
       <span class="remove" onclick="removeClip(${i})">&#215;</span>
     </div>`).join('') +
-    (_uploading > 0
-      ? `<div class="upload-hint">Uploading ${_uploading} file${_uploading!==1?'s':''}… please wait</div>`
-      : `<div class="queue-hint" style="margin-top:4px;">${clips.length} clip${clips.length!==1?'s':''} &nbsp;·&nbsp; drag to reorder</div>`);
-  if (genBtn) genBtn.disabled = _uploading > 0;
+    `<div class="queue-hint" style="margin-top:4px;">${clips.length} clip${clips.length!==1?'s':''} &nbsp;·&nbsp; drag to reorder</div>`;
 }
-
 function removeClip(i) { clips.splice(i,1); renderQueue(); }
 
 let dragSrc = null;
@@ -529,22 +475,16 @@ musicDrop.addEventListener('dragleave', () => musicDrop.classList.remove('over')
 musicDrop.addEventListener('drop', e => { e.preventDefault(); musicDrop.classList.remove('over'); if(e.dataTransfer.files[0]) setMusic(e.dataTransfer.files[0]); });
 musicInput.addEventListener('change', e => { if(e.target.files[0]) setMusic(e.target.files[0]); });
 function setMusic(f) {
-  musicFile = { name: f.name, serverPath: null };
-  document.getElementById('musicName').textContent = stripExt(f.name);
-  document.getElementById('musicPath').textContent = ON_SERVER ? 'Uploading…' : f.name;
-  if (ON_SERVER) {
-    _uploading++;
-    renderQueue();
-    uploadFile(f)
-      .then(({path}) => { musicFile.serverPath = path; _uploading--; document.getElementById('musicPath').textContent = f.name; renderQueue(); })
-      .catch(() => { _uploading--; document.getElementById('musicPath').textContent = 'Upload failed'; renderQueue(); });
-  }
+  musicFile={name:f.name};
+  document.getElementById('musicName').textContent=stripExt(f.name);
+  document.getElementById('musicPathHint').textContent=f.name;
+  const pathInput=document.getElementById('musicFilePath');
+  if(!pathInput.value) pathInput.value='/Users/lukeviviers/Desktop/'+f.name;
+  else pathInput.value=pathInput.value.replace(/[^/]+$/, f.name);
 }
 
-async function generate() {
+function generate() {
   if (clips.length < 2) { alert('Add at least 2 clips first.'); return; }
-  if (_uploading > 0) { alert('Still uploading — please wait.'); return; }
-  if (ON_SERVER && clips.some(c => !c.serverPath)) { alert('Some clips failed to upload. Remove them and re-add.'); return; }
   const res=document.getElementById('resolution').value, [W,H]=res.split(':');
   const trans=document.getElementById('transition').value;
   const xfade=parseFloat(document.getElementById('xfadeDur').value);
@@ -552,41 +492,12 @@ async function generate() {
   const glitch=document.getElementById('glitchMode').value;
   const flash=document.getElementById('flashMode').value;
   const grade=document.getElementById('colorGrade').value;
-  const format=document.getElementById('outputFormat').value;
-  const smartCrop=document.getElementById('smartCrop').value;
   const clipsDir=document.getElementById('clipsDir').value.trim();
+  const outPath=document.getElementById('outputPath').value.trim();
   const ffmpeg=document.getElementById('ffmpegPath').value.trim();
-  const hasMusic=!!musicFile;
-
-  // Smart crop: analyse each clip server-side before building the command
-  let cropData = clips.map(() => null);
-  if (smartCrop === 'on' && ON_SERVER) {
-    const genBtn = document.querySelector('.gen-btn');
-    const origText = genBtn.textContent;
-    genBtn.disabled = true;
-    for (let i = 0; i < clips.length; i++) {
-      genBtn.textContent = `Analysing clip ${i + 1} / ${clips.length}…`;
-      const path = clips[i].serverPath;
-      if (!path) continue;
-      try {
-        const r = await fetch(`/analyze?path=${encodeURIComponent(path)}&w=${W}&h=${H}`);
-        const d = await r.json();
-        if (!d.error) cropData[i] = d;
-      } catch (_) {}
-    }
-    genBtn.disabled = false;
-    genBtn.textContent = origText;
-  }
-
-  const FORMAT_MAP={
-    mp4_h264:{ext:'mp4', vcodec:'-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20', acodec:'-c:a aac -b:a 192k', extra:'-movflags +faststart'},
-    mov_h264:{ext:'mov', vcodec:'-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20', acodec:'-c:a aac -b:a 192k', extra:''},
-    mkv_h264:{ext:'mkv', vcodec:'-c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset fast -crf 20', acodec:'-c:a aac -b:a 192k', extra:''},
-    mp4_h265:{ext:'mp4', vcodec:'-c:v libx265 -pix_fmt yuv420p -preset fast -crf 22 -tag:v hvc1',               acodec:'-c:a aac -b:a 192k', extra:'-movflags +faststart'},
-    webm_vp9:{ext:'webm',vcodec:'-c:v libvpx-vp9 -crf 30 -b:v 0 -pix_fmt yuv420p',                             acodec:'-c:a libopus -b:a 128k',extra:''},
-  };
-  const fmt=FORMAT_MAP[format]||FORMAT_MAP.mp4_h264;
-  const outPath=ON_SERVER?`/tmp/surreal_out.${fmt.ext}`:document.getElementById('outputPath').value.trim();
+  const musicPath=document.getElementById('musicFilePath').value.trim();
+  const hasMusic=!!(musicFile && musicPath);
+  const [crf, preset] = document.getElementById('quality').value.split(':');
 
   const GLITCH_FX={none:'',chroma:',rgbashift=rh=10:bh=-10:rv=0:bv=0',noise:',noise=c0s=22:allf=t',pixel:',pixelize=width=14:height=14',combo:',rgbashift=rh=8:bh=-8,noise=c0s=15:allf=t'};
   const COLOR_GRADE_FX={
@@ -605,17 +516,13 @@ async function generate() {
 
   const N=clips.length, clipDur=maxDur;
   let lines=[ffmpeg];
-  clips.forEach(c=>lines.push(`  -ss 0 -t ${clipDur} -i "${ON_SERVER&&c.serverPath?c.serverPath:clipsDir+'/'+c.fullName}"`));
-  if(hasMusic) lines.push(`  -i "${ON_SERVER&&musicFile.serverPath?musicFile.serverPath:musicFile.name}"`);
+  clips.forEach(c=>lines.push(`  -ss 0 -t ${clipDur} -i "${clipsDir}/${c.fullName}"`));
+  if(hasMusic) lines.push(`  -i "${musicPath}"`);
 
   let filters=[];
   clips.forEach((_,i)=>{
     const g=glitch!=='none'?GLITCH_FX[glitch]:'';
-    const cd=cropData[i];
-    const scaleFilter=cd
-      ?`scale=${cd.scaled_w}:${cd.scaled_h},crop=${W}:${H}:${cd.crop_x}:${cd.crop_y}`
-      :`scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`;
-    filters.push(`[${i}:v]${scaleFilter},setsar=1,format=yuv420p${g}[v${i}]`);
+    filters.push(`[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}:(iw-ow)/2:(ih-oh)/4,setsar=1,format=yuv420p${g}[v${i}]`);
   });
   let offset=0,prev='v0';
   for(let i=1;i<N;i++){
@@ -636,25 +543,11 @@ async function generate() {
   lines.push(filters.join(';\n')+`"`);
   lines.push('  \\');
   lines.push(`  -map "[${finalVTag}]"${hasMusic?' -map "[aout]"':''} \\`);
-  lines.push(`  ${fmt.vcodec} \\`);
-  if(hasMusic) lines.push(`  ${fmt.acodec} \\`);
-  if(fmt.extra) lines.push(`  ${fmt.extra} \\`);
-  lines.push(`  -shortest \\`);
+  lines.push(`  -c:v libx264 -profile:v high -level 4.0 -pix_fmt yuv420p -preset ${preset} -crf ${crf} \\`);
+  if(hasMusic) lines.push(`  -c:a aac -b:a 192k \\`);
+  lines.push(`  -movflags +faststart -shortest \\`);
   lines.push(`  "${outPath}" -y`);
   _lastCmd=lines.join('\n');
-
-  const ep=[ffmpeg];
-  clips.forEach(c=>ep.push(`-ss 0 -t ${clipDur} -i "${ON_SERVER&&c.serverPath?c.serverPath:clipsDir+'/'+c.fullName}"`));
-  if(hasMusic) ep.push(`-i "${ON_SERVER&&musicFile.serverPath?musicFile.serverPath:musicFile.name}"`);
-  ep.push(`-filter_complex "${filters.join(';')}"`);
-  ep.push(`-map "[${finalVTag}]"`);
-  if(hasMusic) ep.push(`-map "[aout]"`);
-  ep.push(fmt.vcodec);
-  if(hasMusic) ep.push(fmt.acodec);
-  if(fmt.extra) ep.push(fmt.extra);
-  ep.push(`-shortest`);
-  ep.push(`"${outPath}" -y`);
-  _execCmd=ep.join(' ');
 
   const mins=Math.floor(totalDur/60), secs=Math.round(totalDur%60);
   document.getElementById('infoPills').innerHTML=[
@@ -664,12 +557,8 @@ async function generate() {
     `<div class="pill">Transition: <span>${trans}</span></div>`,
     `<div class="pill">Glitch: <span>${glitch}</span></div>`,
     grade!=='none'?`<div class="pill">Grade: <span>${grade.replace(/_/g,' ')}</span></div>`:'',
-    `<div class="pill">Format: <span>${fmt.ext.toUpperCase()}</span></div>`,
-    smartCrop==='on'?`<div class="pill">Smart Crop: <span>${cropData.filter(Boolean).length}/${clips.length} faces</span></div>`:'',
-    hasMusic?`<div class="pill">Music: <span>${musicFile.name}</span></div>`:''
+    hasMusic?`<div class="pill">Music: <span>${musicPath.split('/').pop()}</span></div>`:''
   ].join('');
-  const dlBtn2=document.getElementById('dlBtn');
-  if(dlBtn2){dlBtn2.href=`/files/surreal_out.${fmt.ext}`;dlBtn2.download=`surreal_compilation.${fmt.ext}`;}
 
   document.getElementById('cmdBlock').textContent=_lastCmd;
   const box=document.getElementById('outputBox');
@@ -682,6 +571,7 @@ async function generate() {
   if(ON_SERVER){
     runBtn.style.display=''; runBtn.textContent='&#9654; Run It'; runBtn.disabled=false; notice.style.display='none';
     box.scrollIntoView({behavior:'smooth',block:'start'});
+    runCmd(outPath);
   } else {
     runBtn.style.display='none'; notice.style.display='';
     box.scrollIntoView({behavior:'smooth',block:'start'});
@@ -696,18 +586,20 @@ function copyCmd() {
   });
 }
 
-function runCmd() {
+function runCmd(outPath) {
   if(!_lastCmd) return;
+  outPath = outPath || document.getElementById('outputPath').value.trim();
   const runBtn=document.getElementById('runBtn'), logPanel=document.getElementById('logPanel');
   const logBox=document.getElementById('logBox'), statusTag=document.getElementById('statusTag');
   const cancelBtn=document.getElementById('cancelBtn');
-  const dlBtn=document.getElementById('dlBtn'); if(dlBtn)dlBtn.style.display='none';
+  const downloadBtn=document.getElementById('downloadBtn');
   runBtn.disabled=true; runBtn.textContent='Running...';
+  downloadBtn.style.display='none';
   logBox.textContent=''; logPanel.classList.add('visible');
   statusTag.textContent='Running'; statusTag.className='status-tag running';
   cancelBtn.style.display=''; logPanel.scrollIntoView({behavior:'smooth',block:'start'});
   if(_evtSrc){_evtSrc.close();_evtSrc=null;}
-  fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:_execCmd})})
+  fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:_lastCmd})})
   .then(r=>{if(!r.ok)throw new Error('Server error');return r.json();})
   .then(({job_id})=>{
     _jobId=job_id;
@@ -716,8 +608,12 @@ function runCmd() {
     es.addEventListener('done',e=>{
       es.close();_evtSrc=null; cancelBtn.style.display='none';
       const rc=parseInt(e.data,10);
-      if(rc===0){statusTag.textContent='Done!';statusTag.className='status-tag done';runBtn.textContent='Run Again';if(ON_SERVER&&dlBtn)dlBtn.style.display='';}
-      else{statusTag.textContent='Failed ('+rc+')';statusTag.className='status-tag failed';runBtn.textContent='Retry';}
+      if(rc===0){
+        statusTag.textContent='Done!';statusTag.className='status-tag done';runBtn.textContent='Run Again';
+        downloadBtn.href='/file?path='+encodeURIComponent(outPath);
+        downloadBtn.setAttribute('download', outPath.split('/').pop());
+        downloadBtn.style.display='inline-flex';
+      } else{statusTag.textContent='Failed ('+rc+')';statusTag.className='status-tag failed';runBtn.textContent='Retry';}
       runBtn.disabled=false;
     });
     es.onerror=()=>{es.close();_evtSrc=null;statusTag.textContent='Lost connection';statusTag.className='status-tag failed';runBtn.textContent='Retry';runBtn.disabled=false;};
